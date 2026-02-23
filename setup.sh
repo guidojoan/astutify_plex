@@ -24,10 +24,18 @@ echo "Usuario: $CURRENT_USER"
 echo ""
 
 # Solicitar contraseña de Samba (sin mostrarla en pantalla)
-read -s -p "Ingrese la contraseña de Samba: " SAMBA_PASSWORD
+printf "Ingrese la contraseña de Samba: "
+stty -echo
+read SAMBA_PASSWORD
+stty echo
 echo ""
-read -s -p "Confirme la contraseña de Samba: " SAMBA_PASSWORD_CONFIRM
+
+printf "Confirme la contraseña de Samba: "
+stty -echo
+read SAMBA_PASSWORD_CONFIRM
+stty echo
 echo ""
+
 
 # Verificar que las contraseñas coincidan
 if [ "$SAMBA_PASSWORD" != "$SAMBA_PASSWORD_CONFIRM" ]; then
@@ -36,6 +44,46 @@ if [ "$SAMBA_PASSWORD" != "$SAMBA_PASSWORD_CONFIRM" ]; then
 fi
 
 echo ""
+
+# Solicitar credenciales de OpenVPN
+printf "Ingrese su usuario de OpenVPN: "
+read OPENVPN_USER
+echo ""
+
+printf "Ingrese su password de OpenVPN: "
+stty -echo
+read OPENVPN_PASSWORD
+stty echo
+echo ""
+
+# Guardar las credenciales en archivo .env
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env"
+
+echo "Guardando configuración..."
+
+# Crear o actualizar archivo .env
+if [ -f "$ENV_FILE" ]; then
+    # Si existe, actualizar las líneas de OpenVPN
+    if grep -q "^OPENVPN_USER=" "$ENV_FILE"; then
+        sed -i "s|^OPENVPN_USER=.*|OPENVPN_USER=$OPENVPN_USER|" "$ENV_FILE"
+    else
+        echo "OPENVPN_USER=$OPENVPN_USER" >> "$ENV_FILE"
+    fi
+    
+    if grep -q "^OPENVPN_PASSWORD=" "$ENV_FILE"; then
+        sed -i "s|^OPENVPN_PASSWORD=.*|OPENVPN_PASSWORD=$OPENVPN_PASSWORD|" "$ENV_FILE"
+    else
+        echo "OPENVPN_PASSWORD=$OPENVPN_PASSWORD" >> "$ENV_FILE"
+    fi
+else
+    # Crear nuevo archivo .env
+    echo "OPENVPN_USER=$OPENVPN_USER" > "$ENV_FILE"
+    echo "OPENVPN_PASSWORD=$OPENVPN_PASSWORD" >> "$ENV_FILE"
+fi
+
+# Asegurar que .env no sea accesible a otros usuarios
+chmod 600 "$ENV_FILE"
 
 # Detectar el sistema operativo
 if [ -f /etc/debian_version ]; then
@@ -78,9 +126,39 @@ fi
 echo "Configurando usuario de Samba: $CURRENT_USER"
 (echo "$SAMBA_PASSWORD"; echo "$SAMBA_PASSWORD") | sudo smbpasswd -a "$CURRENT_USER" -s
 
+# Configurar el recurso compartido de Samba para /media
+echo "Configurando recurso compartido de Samba..."
+sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
+
+[media]
+   comment = Media Share
+   path = /media
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = $CURRENT_USER
+   create mask = 0775
+   directory mask = 0775
+   force user = $CURRENT_USER
+EOF
+
+# Reiniciar el servicio de Samba
+echo "Reiniciando servicio de Samba..."
+if [ "$OS" = "debian" ]; then
+    sudo systemctl restart smbd
+    sudo systemctl enable smbd
+elif [ "$OS" = "redhat" ]; then
+    sudo systemctl restart smb
+    sudo systemctl enable smb
+fi
+
 # Crear directorios necesarios
 echo "Creando directorios..."
-sudo mkdir -p "$USER_HOME/Docker/{jackett,plex,radarr,sonarr,transmission}/config"
+sudo mkdir -p "$USER_HOME/Docker/jackett/config"
+sudo mkdir -p "$USER_HOME/Docker/plex/config"
+sudo mkdir -p "$USER_HOME/Docker/radarr/config"
+sudo mkdir -p "$USER_HOME/Docker/sonarr/config"
+sudo mkdir -p "$USER_HOME/Docker/qbittorrent/config"
 sudo mkdir -p /media
 
 # Establecer permisos

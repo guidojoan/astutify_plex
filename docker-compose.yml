@@ -7,13 +7,10 @@ services:
       - PGID=1000
       - TZ=Europe/Madrid
     volumes:
-      - /home/felicity/Docker/jackett/config:/config
+      - ${HOME}/Docker/jackett/config:/config
       - /media:/media
-    ports:
-      - 9117:9117
     restart: unless-stopped
-    networks:
-      - net
+    network_mode: host
   plex:
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
@@ -23,10 +20,8 @@ services:
       - TZ=Europe/Madrid
       - VERSION=docker
     volumes:
-      - /home/felicity/Docker/plex/config:/config
+      - ${HOME}/Docker/plex/config:/config
       - /media:/media
-    ports:
-      - 32400:32400
     restart: unless-stopped
     network_mode: host
   radarr:
@@ -37,13 +32,10 @@ services:
       - PGID=1000
       - TZ=Europe/Madrid
     volumes:
-      - /home/felicity/Docker/radarr/config:/config
+      - ${HOME}/Docker/radarr/config:/config
       - /media:/media
-    ports:
-      - 7878:7878
     restart: unless-stopped
-    networks:
-      - net
+    network_mode: host
   sonarr:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
@@ -52,30 +44,53 @@ services:
       - PGID=1000
       - TZ=Europe/Madrid
     volumes:
-      - /home/felicity/Docker/sonarr/config:/config
+      - ${HOME}/Docker/sonarr/config:/config
       - /media:/media
-    ports:
-      - 8989:8989
     restart: unless-stopped
-    networks:
-      - net
-  transmission:
-    image: lscr.io/linuxserver/transmission:latest
-    container_name: transmission
+    network_mode: host
+  rpi-monitor:
+    image: michaelmiklis/rpi-monitor:latest
+    container_name: rpi-monitor
+    ports:
+      - 8888:8888
+    volumes:
+      - /boot:/boot:ro
+      - /sys:/dockerhost/sys:ro
+      - /etc:/dockerhost/etc:ro
+      - /proc:/dockerhost/proc:ro
+      - /usr/lib:/dockerhost/usr/lib:ro
+    restart: unless-stopped
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Europe/Madrid
+      - TZ=Etc/UTC
+      - WEBUI_PORT=8080
+      - TORRENTING_PORT=6881
     volumes:
-      - /home/felicity/Docker/transmission/config:/config
+      - ${HOME}/Docker/qbittorrent/config:/config
       - /media:/media
-    ports:
-      - 9091:9091
-      - 51413:51413
-      - 51413:51413/udp
     restart: unless-stopped
-    networks:
-      - net
-networks:
-  net:
-    driver: bridge
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - 8080:8080
+      - 6881:6881
+      - 6881:6881/udp
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    restart: unless-stopped
+    environment:
+      - VPN_SERVICE_PROVIDER=nordvpn
+      - VPN_TYPE=openvpn
+      - OPENVPN_USER=${OPENVPN_USER}
+      - OPENVPN_PASSWORD=${OPENVPN_PASSWORD}
+      - SERVER_CATEGORIES=p2p

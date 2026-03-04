@@ -130,7 +130,7 @@ echo "Configurando usuario de Samba: $CURRENT_USER"
 echo "Configurando recurso compartido de Samba..."
 sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
 
-[media]
+[Plex-Admin]
    comment = Media Share
    path = /media
    browseable = yes
@@ -140,6 +140,46 @@ sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
    create mask = 0775
    directory mask = 0775
    force user = $CURRENT_USER
+EOF
+
+echo ""
+printf "Ingrese el nombre del usuario de Samba de solo lectura: "
+read -r READONLY_USER
+
+printf "Ingrese la contraseña para $READONLY_USER: "
+stty -echo
+read READONLY_PASSWORD
+stty echo
+echo ""
+
+printf "Confirme la contraseña: "
+stty -echo
+read READONLY_PASSWORD_CONFIRM
+stty echo
+echo ""
+
+if [ "$READONLY_PASSWORD" != "$READONLY_PASSWORD_CONFIRM" ]; then
+    echo "Error: Las contraseñas no coinciden"
+    exit 1
+fi
+
+# Crear el usuario de Samba con acceso de solo lectura
+echo "Configurando usuario de Samba de solo lectura: $READONLY_USER"
+(echo "$READONLY_PASSWORD"; echo "$READONLY_PASSWORD") | sudo smbpasswd -a "$READONLY_USER" -s
+
+# Configurar el recurso compartido de Samba para acceso de solo lectura
+echo "Configurando recurso compartido de solo lectura..."
+sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
+
+[Plex]
+   comment = Media Share (Read Only)
+   path = /media
+   browseable = yes
+   read only = yes
+   guest ok = no
+   valid users = $READONLY_USER
+   force user = nobody
+   force group = nogroup
 EOF
 
 # Reiniciar el servicio de Samba

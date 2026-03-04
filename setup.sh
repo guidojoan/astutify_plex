@@ -163,6 +163,12 @@ if [ "$READONLY_PASSWORD" != "$READONLY_PASSWORD_CONFIRM" ]; then
     exit 1
 fi
 
+# Crear el usuario del sistema si no existe
+if ! id -u "$READONLY_USER" >/dev/null 2>&1; then
+    echo "Creando usuario del sistema: $READONLY_USER"
+    sudo useradd -m -s /usr/sbin/nologin "$READONLY_USER"
+fi
+
 # Crear el usuario de Samba con acceso de solo lectura
 echo "Configurando usuario de Samba de solo lectura: $READONLY_USER"
 (echo "$READONLY_PASSWORD"; echo "$READONLY_PASSWORD") | sudo smbpasswd -a "$READONLY_USER" -s

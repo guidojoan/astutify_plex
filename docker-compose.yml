@@ -108,6 +108,7 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
+      - OPENCLAW_HOST=0.0.0.0
     volumes:
       - ${HOME}/Docker/openclaw/config:/config
     network_mode: host

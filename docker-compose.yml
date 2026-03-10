@@ -94,3 +94,24 @@ services:
       - OPENVPN_USER=${OPENVPN_USER}
       - OPENVPN_PASSWORD=${OPENVPN_PASSWORD}
       - SERVER_CATEGORIES=p2p
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - 11434:11434
+    volumes:
+      - ${HOME}/Docker/ollama/config:/root/.ollama
+    network_mode: host
+  openclaw:
+    image: openclaw/openclaw:latest
+    container_name: openclaw
+    restart: unless-stopped
+    ports:
+      - 18789:18789
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${HOME}/Docker/openclaw/config:/config
+    network_mode: host

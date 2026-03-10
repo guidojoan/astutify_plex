@@ -95,7 +95,7 @@ services:
       - OPENVPN_PASSWORD=${OPENVPN_PASSWORD}
       - SERVER_CATEGORIES=p2p
   ollama:
-    image: ollama/ollama:latest
+    image: ghcr.io/openclaw/openclaw:latest
     container_name: ollama
     restart: unless-stopped
     ports:

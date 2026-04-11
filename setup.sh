@@ -207,6 +207,7 @@ sudo mkdir -p "$USER_HOME/Docker/sonarr/config"
 sudo mkdir -p "$USER_HOME/Docker/qbittorrent/config"
 sudo mkdir -p "$USER_HOME/Docker/ollama/config"
 sudo mkdir -p "$USER_HOME/Docker/openclaw/config"
+sudo mkdir -p "$USER_HOME/Docker/overseerr/config"
 sudo mkdir -p /media
 
 # Establecer permisos

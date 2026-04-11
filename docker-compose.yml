@@ -101,3 +101,14 @@ services:
     volumes:
       - ${HOME}/Docker/ollama/config:/root/.ollama
     network_mode: host
+  overseerr:
+    image: lscr.io/linuxserver/overseerr:latest
+    container_name: overseerr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/overseerr/config:/config
+    restart: unless-stopped
+    network_mode: host

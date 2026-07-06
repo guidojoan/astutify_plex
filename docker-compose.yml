@@ -1,53 +1,4 @@
 services:
-  jackett:
-    image: lscr.io/linuxserver/jackett:latest
-    container_name: jackett
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Madrid
-    volumes:
-      - ${HOME}/Docker/jackett/config:/config
-      - /media:/media
-    restart: unless-stopped
-    network_mode: host
-  plex:
-    image: lscr.io/linuxserver/plex:latest
-    container_name: plex
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Madrid
-      - VERSION=docker
-    volumes:
-      - ${HOME}/Docker/plex/config:/config
-      - /media:/media
-    restart: unless-stopped
-    network_mode: host
-  radarr:
-    image: lscr.io/linuxserver/radarr:latest
-    container_name: radarr
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Madrid
-    volumes:
-      - ${HOME}/Docker/radarr/config:/config
-      - /media:/media
-    restart: unless-stopped
-    network_mode: host
-  sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
-    container_name: sonarr
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Madrid
-    volumes:
-      - ${HOME}/Docker/sonarr/config:/config
-      - /media:/media
-    restart: unless-stopped
-    network_mode: host
   rpi-monitor:
     image: michaelmiklis/rpi-monitor:latest
     container_name: rpi-monitor
@@ -60,17 +11,89 @@ services:
       - /proc:/dockerhost/proc:ro
       - /usr/lib:/dockerhost/usr/lib:ro
     restart: unless-stopped
-  qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
-    container_name: qbittorrent
+    networks:
+      - backend
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    container_name: jackett
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Etc/UTC
-      - WEBUI_PORT=8080
-      - TORRENTING_PORT=6881
+      - TZ=Europe/Madrid
     volumes:
-      - ${HOME}/Docker/qbittorrent/config:/config
+      - ${HOME}/Docker/jackett/config:/config
+      - /media:/media
+    ports:
+      - "9117:9117"
+    restart: unless-stopped
+    networks:
+      - backend
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+      - VERSION=docker
+    volumes:
+      - ${HOME}/Docker/plex/config:/config
+      - /media:/media
+    restart: unless-stopped
+    network_mode: "host"
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/radarr/config:/config
+      - /media:/media
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+    networks:
+      - backend
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/sonarr/config:/config
+      - /media:/media
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+    networks:
+      - backend
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
+    environment:
+      - TZ=Europe/Madrid
+      - LOG_LEVEL=debug
+    volumes:
+      - ${HOME}/Docker/seerr/config:/app/config
+    ports:
+      - "5055:5055"
+    restart: unless-stopped
+    networks:
+      - backend
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    container_name: transmission
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/transmission/config:/config
       - /media:/media
     restart: unless-stopped
     network_mode: "service:gluetun"
@@ -82,9 +105,12 @@ services:
     cap_add:
       - NET_ADMIN
     ports:
-      - 8080:8080
+      - 8081:8081      # qBittorrent
       - 6881:6881
       - 6881:6881/udp
+      - 9091:9091      # Transmission
+      - 51413:51413    # Transmission peer port
+      - 51413:51413/udp
     devices:
       - /dev/net/tun:/dev/net/tun
     restart: unless-stopped
@@ -94,10 +120,13 @@ services:
       - OPENVPN_USER=${OPENVPN_USER}
       - OPENVPN_PASSWORD=${OPENVPN_PASSWORD}
       - SERVER_CATEGORIES=p2p
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    volumes:
-      - ${HOME}/Docker/ollama/config:/root/.ollama
-    network_mode: host
+      - SERVER_COUNTRIES=Spain
+    networks:
+      - backend
+volumes:
+  certbot_www:
+  certbot_conf:
+  certbot_log:
+networks:
+  backend:
+    driver: bridge

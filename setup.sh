@@ -198,6 +198,117 @@ elif [ "$OS" = "redhat" ]; then
     sudo systemctl enable smb
 fi
 
+# Seleccionar disco USB y montarlo permanentemente en /plexmedia
+echo ""
+echo "==================================="
+echo "  Configuración de disco USB"
+echo "==================================="
+
+mapfile -t USB_DISKS < <(lsblk -dn -o NAME,TRAN | awk '$2=="usb"{print $1}')
+
+if [ ${#USB_DISKS[@]} -eq 0 ]; then
+    echo "No se detectó ningún disco USB conectado. Omitiendo montaje de /plexmedia."
+else
+    echo "Discos USB detectados:"
+    for i in "${!USB_DISKS[@]}"; do
+        DISK="${USB_DISKS[$i]}"
+        SIZE=$(lsblk -dn -o SIZE "/dev/$DISK")
+        MODEL=$(lsblk -dn -o MODEL "/dev/$DISK")
+        echo "  [$i] /dev/$DISK - $SIZE - $MODEL"
+    done
+
+    printf "Seleccione el número del disco a montar en /plexmedia: "
+    read -r DISK_INDEX
+    SELECTED_DISK="${USB_DISKS[$DISK_INDEX]}"
+
+    if [ -z "$SELECTED_DISK" ]; then
+        echo "Selección inválida. Omitiendo montaje de /plexmedia."
+    else
+        mapfile -t PARTITIONS < <(lsblk -ln -o NAME,TYPE "/dev/$SELECTED_DISK" | awk '$2=="part"{print $1}')
+
+        if [ ${#PARTITIONS[@]} -eq 0 ]; then
+            SELECTED_PART="$SELECTED_DISK"
+        elif [ ${#PARTITIONS[@]} -eq 1 ]; then
+            SELECTED_PART="${PARTITIONS[0]}"
+        else
+            echo "Particiones encontradas en /dev/$SELECTED_DISK:"
+            for i in "${!PARTITIONS[@]}"; do
+                PART="${PARTITIONS[$i]}"
+                SIZE=$(lsblk -dn -o SIZE "/dev/$PART")
+                FSTYPE=$(lsblk -dn -o FSTYPE "/dev/$PART")
+                echo "  [$i] /dev/$PART - $SIZE - $FSTYPE"
+            done
+            printf "Seleccione el número de la partición a montar en /plexmedia: "
+            read -r PART_INDEX
+            SELECTED_PART="${PARTITIONS[$PART_INDEX]}"
+        fi
+
+        if [ -z "$SELECTED_PART" ]; then
+            echo "Selección inválida. Omitiendo montaje de /plexmedia."
+        else
+            DISK_UUID=$(sudo blkid -s UUID -o value "/dev/$SELECTED_PART")
+            DISK_FSTYPE=$(sudo blkid -s TYPE -o value "/dev/$SELECTED_PART")
+
+            if [ -z "$DISK_UUID" ]; then
+                echo "Error: No se pudo obtener el UUID de /dev/$SELECTED_PART"
+            else
+                USER_UID=$(id -u "$CURRENT_USER")
+                USER_GID=$(id -g "$CURRENT_USER")
+
+                # Instalar soporte del sistema de archivos si es necesario
+                case "$DISK_FSTYPE" in
+                    ntfs)
+                        if ! command -v ntfs-3g &> /dev/null; then
+                            if [ "$OS" = "debian" ]; then
+                                sudo apt-get install -y ntfs-3g
+                            elif [ "$OS" = "redhat" ]; then
+                                sudo yum install -y ntfs-3g
+                            fi
+                        fi
+                        MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,dmask=022,fmask=133,nofail"
+                        ;;
+                    exfat)
+                        if ! command -v mount.exfat-fuse &> /dev/null && ! command -v mount.exfat &> /dev/null; then
+                            if [ "$OS" = "debian" ]; then
+                                sudo apt-get install -y exfatprogs exfat-fuse
+                            elif [ "$OS" = "redhat" ]; then
+                                sudo yum install -y exfatprogs
+                            fi
+                        fi
+                        MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,nofail"
+                        ;;
+                    *)
+                        MOUNT_OPTS="defaults,nofail"
+                        ;;
+                esac
+
+                echo "Creando punto de montaje /plexmedia..."
+                sudo mkdir -p /plexmedia
+
+                # Respaldar fstab antes de modificarlo
+                sudo cp /etc/fstab "/etc/fstab.bak.$(date +%s)"
+
+                if grep -q "$DISK_UUID" /etc/fstab; then
+                    echo "El disco ya tiene una entrada en /etc/fstab"
+                else
+                    echo "Agregando entrada a /etc/fstab para montaje permanente..."
+                    sudo bash -c "echo 'UUID=$DISK_UUID  /plexmedia  $DISK_FSTYPE  $MOUNT_OPTS  0  2' >> /etc/fstab"
+                fi
+
+                echo "Montando /plexmedia..."
+                sudo systemctl daemon-reload
+                sudo mount -a
+
+                if [ "$DISK_FSTYPE" != "ntfs" ] && [ "$DISK_FSTYPE" != "exfat" ]; then
+                    sudo chown "$CURRENT_USER":"$CURRENT_USER" /plexmedia
+                fi
+
+                echo "Disco /dev/$SELECTED_PART montado permanentemente en /plexmedia"
+            fi
+        fi
+    fi
+fi
+
 # Crear directorios necesarios
 echo "Creando directorios..."
 sudo mkdir -p "$USER_HOME/Docker/jackett/config"
@@ -206,7 +317,6 @@ sudo mkdir -p "$USER_HOME/Docker/radarr/config"
 sudo mkdir -p "$USER_HOME/Docker/sonarr/config"
 sudo mkdir -p "$USER_HOME/Docker/transmission/config"
 sudo mkdir -p "$USER_HOME/Docker/seerr/config"
-sudo mkdir -p /media
 
 # Establecer permisos
 echo "Configurando permisos..."

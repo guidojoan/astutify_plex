@@ -22,7 +22,7 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ${HOME}/Docker/jackett/config:/config
-      - /media:/media
+      - /plexmedia:/media
     ports:
       - "9117:9117"
     restart: unless-stopped
@@ -38,7 +38,7 @@ services:
       - VERSION=docker
     volumes:
       - ${HOME}/Docker/plex/config:/config
-      - /media:/media
+      - /plexmedia:/media
     restart: unless-stopped
     network_mode: "host"
   radarr:
@@ -50,7 +50,7 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ${HOME}/Docker/radarr/config:/config
-      - /media:/media
+      - /plexmedia:/media
     ports:
       - "7878:7878"
     restart: unless-stopped
@@ -65,7 +65,7 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ${HOME}/Docker/sonarr/config:/config
-      - /media:/media
+      - /plexmedia:/media
     ports:
       - "8989:8989"
     restart: unless-stopped
@@ -94,7 +94,7 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ${HOME}/Docker/transmission/config:/config
-      - /media:/media
+      - /plexmedia:/media
     restart: unless-stopped
     network_mode: "service:gluetun"
     depends_on:

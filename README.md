@@ -26,4 +26,8 @@ newgrp docker
 
 ### Clone repository
 
-Clone this repository and execute the setup.sh
+Clone this repository and execute 
+
+```bash
+sudo bash setup.sh
+```

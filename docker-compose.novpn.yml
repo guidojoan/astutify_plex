@@ -26,6 +26,17 @@ services:
       - /plexmedia:/media
     restart: unless-stopped
     network_mode: "host"
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - TZ=Europe/Madrid
+      - LOG_LEVEL=info
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
+    networks:
+      - backend
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr

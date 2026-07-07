@@ -311,8 +311,8 @@ fi
 
 # Crear directorios necesarios
 echo "Creando directorios..."
-sudo mkdir -p "$USER_HOME/Docker/jackett/config"
 sudo mkdir -p "$USER_HOME/Docker/plex/config"
+sudo mkdir -p "$USER_HOME/Docker/prowlarr/config"
 sudo mkdir -p "$USER_HOME/Docker/radarr/config"
 sudo mkdir -p "$USER_HOME/Docker/sonarr/config"
 sudo mkdir -p "$USER_HOME/Docker/transmission/config"

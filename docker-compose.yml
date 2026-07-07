@@ -13,21 +13,6 @@ services:
     restart: unless-stopped
     networks:
       - backend
-  jackett:
-    image: lscr.io/linuxserver/jackett:latest
-    container_name: jackett
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Madrid
-    volumes:
-      - ${HOME}/Docker/jackett/config:/config
-      - /plexmedia:/media
-    ports:
-      - "9117:9117"
-    restart: unless-stopped
-    networks:
-      - backend
   plex:
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
@@ -41,6 +26,20 @@ services:
       - /plexmedia:/media
     restart: unless-stopped
     network_mode: "host"
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/prowlarr/config:/config
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+    networks:
+      - backend
   radarr:
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr

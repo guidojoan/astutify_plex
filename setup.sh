@@ -139,13 +139,13 @@ fi
 echo "Configurando usuario de Samba: $CURRENT_USER"
 (echo "$SAMBA_PASSWORD"; echo "$SAMBA_PASSWORD") | sudo smbpasswd -a "$CURRENT_USER" -s
 
-# Configurar el recurso compartido de Samba para /media
+# Configurar el recurso compartido de Samba para /plexmedia
 echo "Configurando recurso compartido de Samba..."
 sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
 
 [Plex-Admin]
    comment = Media Share
-   path = /media
+   path = /plexmedia
    browseable = yes
    read only = no
    guest ok = no
@@ -192,7 +192,7 @@ sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
 
 [Plex]
    comment = Media Share (Read Only)
-   path = /media
+   path = /plexmedia
    browseable = yes
    read only = yes
    guest ok = no
@@ -335,8 +335,8 @@ sudo mkdir -p "$USER_HOME/Docker/seerr/config"
 echo "Configurando permisos..."
 sudo chown -R "$CURRENT_USER":$CURRENT_USER "$USER_HOME/Docker"
 sudo chmod -R 775 "$USER_HOME/Docker"
-sudo chown -R "$CURRENT_USER":$CURRENT_USER /media
-sudo chmod -R 775 /media
+sudo chown -R "$CURRENT_USER":$CURRENT_USER /plexmedia
+sudo chmod -R 775 /plexmedia
 
 echo "Iniciando servicios..."
 

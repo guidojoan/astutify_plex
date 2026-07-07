@@ -1,0 +1,110 @@
+services:
+  rpi-monitor:
+    image: michaelmiklis/rpi-monitor:latest
+    container_name: rpi-monitor
+    ports:
+      - 8888:8888
+    volumes:
+      - /boot:/boot:ro
+      - /sys:/dockerhost/sys:ro
+      - /etc:/dockerhost/etc:ro
+      - /proc:/dockerhost/proc:ro
+      - /usr/lib:/dockerhost/usr/lib:ro
+    restart: unless-stopped
+    networks:
+      - backend
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+      - VERSION=docker
+    volumes:
+      - ${HOME}/Docker/plex/config:/config
+      - /plexmedia:/media
+    restart: unless-stopped
+    network_mode: "host"
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/prowlarr/config:/config
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+    networks:
+      - backend
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/radarr/config:/config
+      - /plexmedia:/media
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+    networks:
+      - backend
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/sonarr/config:/config
+      - /plexmedia:/media
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+    networks:
+      - backend
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
+    environment:
+      - TZ=Europe/Madrid
+      - LOG_LEVEL=debug
+    volumes:
+      - ${HOME}/Docker/seerr/config:/app/config
+    ports:
+      - "5055:5055"
+    restart: unless-stopped
+    networks:
+      - backend
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    container_name: transmission
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ${HOME}/Docker/transmission/config:/config
+      - /plexmedia:/media
+    ports:
+      - 9091:9091
+      - 51413:51413
+      - 51413:51413/udp
+    restart: unless-stopped
+    networks:
+      - backend
+volumes:
+  certbot_www:
+  certbot_conf:
+  certbot_log:
+networks:
+  backend:
+    driver: bridge

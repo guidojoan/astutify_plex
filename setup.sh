@@ -45,45 +45,58 @@ fi
 
 echo ""
 
-# Solicitar credenciales de OpenVPN
-printf "Ingrese su usuario de OpenVPN: "
-read OPENVPN_USER
+# Preguntar si se desea usar VPN (gluetun)
+printf "¿Desea usar VPN para las descargas? (s/n): "
+read -r USE_VPN
 echo ""
 
-printf "Ingrese su password de OpenVPN: "
-stty -echo
-read OPENVPN_PASSWORD
-stty echo
-echo ""
+if [[ "$USE_VPN" =~ ^[Ss]$ ]]; then
+    USE_VPN="s"
 
-# Guardar las credenciales en archivo .env
+    # Solicitar credenciales de OpenVPN
+    printf "Ingrese su usuario de OpenVPN: "
+    read OPENVPN_USER
+    echo ""
+
+    printf "Ingrese su password de OpenVPN: "
+    stty -echo
+    read OPENVPN_PASSWORD
+    stty echo
+    echo ""
+else
+    USE_VPN="n"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 
-echo "Guardando configuración..."
+if [ "$USE_VPN" = "s" ]; then
+    # Guardar las credenciales en archivo .env
+    echo "Guardando configuración..."
 
-# Crear o actualizar archivo .env
-if [ -f "$ENV_FILE" ]; then
-    # Si existe, actualizar las líneas de OpenVPN
-    if grep -q "^OPENVPN_USER=" "$ENV_FILE"; then
-        sed -i "s|^OPENVPN_USER=.*|OPENVPN_USER=$OPENVPN_USER|" "$ENV_FILE"
+    # Crear o actualizar archivo .env
+    if [ -f "$ENV_FILE" ]; then
+        # Si existe, actualizar las líneas de OpenVPN
+        if grep -q "^OPENVPN_USER=" "$ENV_FILE"; then
+            sed -i "s|^OPENVPN_USER=.*|OPENVPN_USER=$OPENVPN_USER|" "$ENV_FILE"
+        else
+            echo "OPENVPN_USER=$OPENVPN_USER" >> "$ENV_FILE"
+        fi
+
+        if grep -q "^OPENVPN_PASSWORD=" "$ENV_FILE"; then
+            sed -i "s|^OPENVPN_PASSWORD=.*|OPENVPN_PASSWORD=$OPENVPN_PASSWORD|" "$ENV_FILE"
+        else
+            echo "OPENVPN_PASSWORD=$OPENVPN_PASSWORD" >> "$ENV_FILE"
+        fi
     else
-        echo "OPENVPN_USER=$OPENVPN_USER" >> "$ENV_FILE"
-    fi
-    
-    if grep -q "^OPENVPN_PASSWORD=" "$ENV_FILE"; then
-        sed -i "s|^OPENVPN_PASSWORD=.*|OPENVPN_PASSWORD=$OPENVPN_PASSWORD|" "$ENV_FILE"
-    else
+        # Crear nuevo archivo .env
+        echo "OPENVPN_USER=$OPENVPN_USER" > "$ENV_FILE"
         echo "OPENVPN_PASSWORD=$OPENVPN_PASSWORD" >> "$ENV_FILE"
     fi
-else
-    # Crear nuevo archivo .env
-    echo "OPENVPN_USER=$OPENVPN_USER" > "$ENV_FILE"
-    echo "OPENVPN_PASSWORD=$OPENVPN_PASSWORD" >> "$ENV_FILE"
-fi
 
-# Asegurar que .env no sea accesible a otros usuarios
-chmod 600 "$ENV_FILE"
+    # Asegurar que .env no sea accesible a otros usuarios
+    chmod 600 "$ENV_FILE"
+fi
 
 # Detectar el sistema operativo
 if [ -f /etc/debian_version ]; then
@@ -327,7 +340,11 @@ sudo chmod -R 775 /media
 
 echo "Iniciando servicios..."
 
-docker compose up -d
+if [ "$USE_VPN" = "s" ]; then
+    docker compose up -d
+else
+    docker compose -f docker-compose.novpn.yml up -d
+fi
 
 echo ""
 echo "==================================="

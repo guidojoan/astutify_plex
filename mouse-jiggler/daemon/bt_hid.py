@@ -35,6 +35,26 @@ HID_UUID = "00001124-0000-1000-8000-00805f9b34fb"
 PSM_CONTROL = 0x11
 PSM_INTERRUPT = 0x13
 
+# HIDP transaction header: bits 7-4 are the transaction type, bits 3-0 are
+# a type-specific parameter. Hosts send SET_PROTOCOL/SET_REPORT/SET_IDLE
+# on the control channel right after connecting and expect a HANDSHAKE
+# reply; macOS in particular tears down the whole connection a few seconds
+# after SET_PROTOCOL if it never gets one.
+HIDP_TRANS_MASK = 0xF0
+HIDP_TRANS_HANDSHAKE = 0x00
+HIDP_TRANS_HID_CONTROL = 0x10
+HIDP_TRANS_GET_REPORT = 0x40
+HIDP_TRANS_SET_REPORT = 0x50
+HIDP_TRANS_GET_PROTOCOL = 0x60
+HIDP_TRANS_SET_PROTOCOL = 0x70
+HIDP_TRANS_GET_IDLE = 0x80
+HIDP_TRANS_SET_IDLE = 0x90
+
+HIDP_HSHK_SUCCESSFUL = 0x00
+HIDP_HSHK_ERR_UNSUPPORTED_REQUEST = 0x03
+
+HIDP_CONTROL_VIRTUAL_CABLE_UNPLUG = 0x05
+
 # Minimal 3-byte relative-mouse HID report descriptor: buttons + dx + dy.
 HID_REPORT_DESCRIPTOR = bytes(
     [
@@ -286,20 +306,37 @@ class BluetoothHID:
             self._peer_address = intr_addr[0] if isinstance(intr_addr, tuple) else str(intr_addr)
             logger.info("Bluetooth peer connected: %s", self._peer_address)
             self._on_state_change(connected=True, peer=self._peer_address)
-            asyncio.create_task(self._drain_control_channel(ctrl_conn))
+            asyncio.create_task(self._handle_control_channel(ctrl_conn))
 
-    async def _drain_control_channel(self, ctrl_conn):
+    async def _handle_control_channel(self, ctrl_conn):
         # The control channel must stay open for the life of the connection
-        # -- HID hosts (macOS included) use it for the handshake/protocol
-        # messages, and treat it disappearing as reason to tear the whole
-        # link down. We don't need to act on anything sent over it, just
-        # keep it open and notice if the peer closes it.
+        # -- HID hosts send SET_PROTOCOL/SET_REPORT/SET_IDLE here right
+        # after connecting and require a HANDSHAKE reply. macOS in
+        # particular tears down the whole connection a few seconds after
+        # SET_PROTOCOL if it never gets one, which is why Macs used to
+        # connect and immediately drop: this channel was being drained and
+        # discarded instead of answered.
         loop = asyncio.get_running_loop()
         try:
             while True:
                 data = await loop.sock_recv(ctrl_conn, 64)
                 if not data:
                     break
+                header = data[0]
+                trans_type = header & HIDP_TRANS_MASK
+                if trans_type in (HIDP_TRANS_SET_PROTOCOL, HIDP_TRANS_SET_REPORT, HIDP_TRANS_SET_IDLE):
+                    reply = bytes([HIDP_TRANS_HANDSHAKE | HIDP_HSHK_SUCCESSFUL])
+                elif trans_type == HIDP_TRANS_HID_CONTROL:
+                    if (header & 0x0F) == HIDP_CONTROL_VIRTUAL_CABLE_UNPLUG:
+                        logger.info("HID control: virtual cable unplug from %s", self._peer_address)
+                        break
+                    reply = None
+                elif trans_type in (HIDP_TRANS_GET_REPORT, HIDP_TRANS_GET_PROTOCOL, HIDP_TRANS_GET_IDLE):
+                    reply = bytes([HIDP_TRANS_HANDSHAKE | HIDP_HSHK_ERR_UNSUPPORTED_REQUEST])
+                else:
+                    reply = None
+                if reply is not None:
+                    await loop.sock_sendall(ctrl_conn, reply)
         except OSError:
             pass
         finally:

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mouse Jiggler</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Bluetooth Mouse Jiggler</h1>
+
+    <section class="card" id="status-card">
+      <h2>Status</h2>
+      <dl>
+        <dt>Daemon</dt><dd id="status-daemon">—</dd>
+        <dt>Bluetooth</dt><dd id="status-bt">—</dd>
+        <dt>Peer</dt><dd id="status-peer">—</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>Jiggle Settings</h2>
+      <label class="toggle-row">
+        <span>Enabled</span>
+        <input type="checkbox" id="enabled-toggle">
+      </label>
+      <label class="field-row">
+        <span>Interval (seconds)</span>
+        <input type="number" id="interval-input" min="5" max="3600" step="1">
+      </label>
+      <button id="save-btn">Save</button>
+      <span id="save-status" class="hint"></span>
+    </section>
+
+    <section class="card">
+      <h2>Pairing</h2>
+      <p class="hint">Click Pair, then open Bluetooth settings on your Mac and connect to this device.</p>
+      <button id="pair-btn">Pair new device</button>
+      <span id="pair-status" class="hint"></span>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+[Unit]
+Description=Mouse Jiggler web UI/API
+After=network.target mouse-jiggler-daemon.service
+Wants=mouse-jiggler-daemon.service
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__INSTALL_DIR__/venv/bin/uvicorn webapp.main:app --host 0.0.0.0 --port 8090
+User=mousejiggler-web
+Group=mousejiggler
+Environment=MOUSE_JIGGLER_SOCKET=/run/mouse-jiggler/daemon.sock
+Environment=MOUSE_JIGGLER_CONFIG=/var/lib/mouse-jiggler/config.json
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

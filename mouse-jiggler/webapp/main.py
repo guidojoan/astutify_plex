@@ -1,11 +1,11 @@
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import ipc_client
 
@@ -19,6 +19,18 @@ class ConfigUpdate(BaseModel):
     enabled: bool
     interval_s: int = Field(ge=5, le=3600)
     device_name: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    schedule_enabled: bool = False
+    start_hour: int = Field(default=9, ge=0, le=23)
+    end_hour: int = Field(default=17, ge=0, le=23)
+    days: List[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
+
+    @field_validator("days")
+    @classmethod
+    def _validate_days(cls, value):
+        cleaned = sorted({d for d in value if 0 <= d <= 6})
+        if not cleaned:
+            raise ValueError("days must contain at least one value between 0 (Mon) and 6 (Sun)")
+        return cleaned
 
 
 class PairRequest(BaseModel):
@@ -39,6 +51,11 @@ def _fallback_status():
         "enabled": data.get("enabled", False),
         "interval_s": data.get("interval_s", 45),
         "device_name": data.get("device_name", "Mouse Jiggler"),
+        "schedule_enabled": data.get("schedule_enabled", False),
+        "start_hour": data.get("start_hour", 9),
+        "end_hour": data.get("end_hour", 17),
+        "days": data.get("days", [0, 1, 2, 3, 4, 5, 6]),
+        "schedule_active": None,
         "bt_connected": False,
         "bt_peer": None,
         "pairing_state": "unknown",
@@ -65,6 +82,10 @@ async def set_config(update: ConfigUpdate):
             enabled=update.enabled,
             interval_s=update.interval_s,
             device_name=update.device_name,
+            schedule_enabled=update.schedule_enabled,
+            start_hour=update.start_hour,
+            end_hour=update.end_hour,
+            days=update.days,
         )
     except ipc_client.DaemonUnavailable:
         raise HTTPException(status_code=503, detail="daemon unreachable")

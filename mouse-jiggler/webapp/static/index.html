@@ -16,6 +16,7 @@
         <dt>Daemon</dt><dd id="status-daemon">—</dd>
         <dt>Bluetooth</dt><dd id="status-bt">—</dd>
         <dt>Peer</dt><dd id="status-peer">—</dd>
+        <dt>Schedule</dt><dd id="status-schedule">—</dd>
       </dl>
     </section>
 
@@ -35,6 +36,26 @@
       </label>
       <p class="hint">Renaming only affects future pairings — a Mac that already
         paired keeps showing the old name until you forget and re-pair it.</p>
+
+      <label class="toggle-row">
+        <span>Only run on a schedule</span>
+        <input type="checkbox" id="schedule-enabled-toggle">
+      </label>
+      <div id="schedule-fields" style="display: none;">
+        <label class="field-row">
+          <span>Start hour</span>
+          <select id="start-hour-select"></select>
+        </label>
+        <label class="field-row">
+          <span>End hour</span>
+          <select id="end-hour-select"></select>
+        </label>
+        <div class="days-row" id="days-row"></div>
+        <p class="hint">Jiggling only runs between the start and end hour, on
+          the checked days. Start hour later than end hour wraps past
+          midnight. Times use the Pi's local clock.</p>
+      </div>
+
       <button id="save-btn">Save</button>
       <span id="save-status" class="hint"></span>
     </section>

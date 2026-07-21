@@ -55,6 +55,15 @@ Web UI: `http://<pi-ip>:8090`
 3. Once paired, the status card shows `Bluetooth: connected` and the peer
    address. Toggle **Enabled** and set an interval, then **Save**.
 
+## Scheduling
+
+Turn on **Only run on a schedule** in the Jiggle Settings card to restrict
+jiggling to a start hour, end hour, and set of weekdays (all times are the
+Pi's local clock). A start hour later than the end hour wraps past
+midnight (e.g. 22:00 -> 06:00). With the schedule off, jiggling runs
+whenever **Enabled** is on, as before. The status card's **Schedule** row
+shows `in window` / `outside window` while a schedule is active.
+
 macOS generally expects the *first* pairing to be initiated from its own
 Bluetooth settings while the peripheral (the Pi) is discoverable, rather
 than the peripheral connecting out — that's why pairing is a manual,

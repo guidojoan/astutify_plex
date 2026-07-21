@@ -51,6 +51,22 @@ if [ -f /etc/bluetooth/main.conf ] && ! grep -q "^Class" /etc/bluetooth/main.con
     sed -i '/^\[General\]/a Class = 0x0005C0' /etc/bluetooth/main.conf
 fi
 
+echo "Disabling BlueZ's built-in HID 'input' plugin..."
+# bluetoothd's stock input plugin already registers the HID (0x1124) UUID to
+# manage any paired HID devices itself, which conflicts with our own custom
+# HID profile registration ("UUID already registered"). Override the vendor
+# unit rather than editing it directly, so this survives package updates.
+BLUETOOTHD_PATH="$(systemctl show bluetooth.service -p ExecStart --value | grep -oP '(?<=path=)\S+' | head -n1)"
+if [ -z "$BLUETOOTHD_PATH" ]; then
+    BLUETOOTHD_PATH="/usr/libexec/bluetooth/bluetoothd"
+fi
+mkdir -p /etc/systemd/system/bluetooth.service.d
+cat > /etc/systemd/system/bluetooth.service.d/override.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=$BLUETOOTHD_PATH --noplugin=input
+EOF
+
 echo "Installing systemd units..."
 for unit in mouse-jiggler-daemon.service mouse-jiggler-web.service; do
     sed -e "s|__INSTALL_DIR__|$SCRIPT_DIR|g" -e "s|__WEB_USER__|$WEB_USER|g" \

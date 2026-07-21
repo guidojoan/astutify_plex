@@ -62,11 +62,17 @@ UI-triggered action rather than something the daemon does automatically.
 
 ## Known caveats
 
-- **Untested on real hardware yet.** The BlueZ SDP-record and L2CAP-socket
-  plumbing in `daemon/bt_hid.py` is the highest-risk part of this design —
-  expect to iterate on it against a real Pi 5 + Mac (see Verification
-  below). `journalctl -u mouse-jiggler-daemon -f` is the first place to look
-  if pairing or reports don't behave as expected.
+- **The BlueZ SDP-record and L2CAP-socket plumbing in `daemon/bt_hid.py`
+  is the highest-risk part of this design** — it's being iterated on
+  against real Pi 5 + Mac hardware. `journalctl -u mouse-jiggler-daemon -f`
+  is the first place to look if pairing or reports don't behave as
+  expected. One issue already found and fixed this way: BlueZ's stock
+  `input` plugin registers the HID (`0x1124`) UUID itself to manage any
+  paired HID devices, which collides with our own profile registration
+  ("UUID already registered"). `install.sh` disables that plugin via a
+  `bluetooth.service` drop-in (`--noplugin=input`) — if you see that error,
+  re-run `sudo bash install.sh` to pick it up, or check
+  `systemctl cat bluetooth.service` to confirm the override is active.
 - This only prevents **idle-triggered** sleep/screen lock — it's the
   software equivalent of nudging a physical mouse. It won't override
   `pmset sleepnow`, a closed lid, or an explicit scheduled sleep on the Mac.

@@ -79,51 +79,6 @@ To see a new name (or the corrected mouse icon, if you paired before this
 was fixed), remove the device from the Mac's Bluetooth settings and pair
 again.
 
-## HDMI-CEC monitor control
-
-The web app also exposes two API-only endpoints (no UI, meant to be called
-from another machine on the LAN — e.g. a script or automation) that send
-HDMI-CEC commands out the Pi's HDMI port via `cec-client` (`cec-utils`):
-
-- `POST /api/cec/power` with body `{"state": "on"}` or `{"state": "standby"}`
-  — powers the monitor on or puts it into standby.
-- `POST /api/cec/active-source` with an optional body `{"source": "hdmi1"}`
-  or `{"source": "hdmi2"}` — tells the monitor to switch to that HDMI
-  input. With no body (or `{}`), it claims active source using the Pi's
-  own real physical address, i.e. switches to whichever port the Pi
-  itself is plugged into.
-
-```bash
-curl -X POST http://<pi-ip>:8090/api/cec/power \
-  -H 'Content-Type: application/json' -d '{"state": "on"}'
-curl -X POST http://<pi-ip>:8090/api/cec/active-source \
-  -H 'Content-Type: application/json' -d '{"source": "hdmi2"}'
-```
-
-Requires the `video` group membership `install.sh` grants the web service
-user (for `/dev/cec0` access) and the `cec-utils` package it installs. Both
-endpoints return `502` if `cec-client` fails, times out, or isn't
-installed — check `cec-client -l` (adapter detected?) and
-`echo 'scan' | cec-client -s -d 1` (monitor found on the bus?) first if
-they fail. Same no-auth, LAN-only trust model as the rest of this app.
-
-**Input selection specifics (MSI PRO MP275Q, 2× HDMI 2.0b + 1× DisplayPort):**
-CEC only runs over HDMI, so the DisplayPort input can never be selected
-this way — only `hdmi1`/`hdmi2` (physical addresses `1.0.0.0`/`2.0.0.0`,
-the standard HDMI-CEC addressing for a device wired directly into sink
-input N) are offered. Switching to a *named* input works by having
-`cec-client` temporarily report a spoofed physical address before
-claiming active source (`pa <addr>` then `as`) — safe because each API
-call spawns a fresh `cec-client` process that re-detects its real address
-on the next invocation, so nothing persists across calls. This monitor
-advertises CEC support as "MSI Power Link" for one-touch-play/standby;
-whether it also honors routing requests to a HDMI port other than the
-one currently sending them is unverified — confirm on real hardware
-(`journalctl -u mouse-jiggler-web -f` while calling the endpoint) before
-relying on it, and treat `hdmi1`/`hdmi2` as a starting guess for which
-physical port is which until you've confirmed which one the monitor
-actually switches to.
-
 ## Known caveats
 
 - **The BlueZ SDP-record and L2CAP-socket plumbing in `daemon/bt_hid.py`

@@ -174,6 +174,7 @@ class BluetoothHID:
         self._bus = None
         self._control_sock = None
         self._interrupt_sock = None
+        self._control_conn = None
         self._interrupt_conn = None
         self._peer_address = None
         self._on_state_change = on_state_change or (lambda **kw: None)
@@ -270,12 +271,32 @@ class BluetoothHID:
                 await asyncio.sleep(1)
                 continue
 
-            ctrl_conn.close()  # control channel isn't used for jiggling, just needs to be open
+            ctrl_conn.setblocking(False)
             intr_conn.setblocking(True)
+            self._control_conn = ctrl_conn
             self._interrupt_conn = intr_conn
             self._peer_address = intr_addr[0] if isinstance(intr_addr, tuple) else str(intr_addr)
             logger.info("Bluetooth peer connected: %s", self._peer_address)
             self._on_state_change(connected=True, peer=self._peer_address)
+            asyncio.create_task(self._drain_control_channel(ctrl_conn))
+
+    async def _drain_control_channel(self, ctrl_conn):
+        # The control channel must stay open for the life of the connection
+        # -- HID hosts (macOS included) use it for the handshake/protocol
+        # messages, and treat it disappearing as reason to tear the whole
+        # link down. We don't need to act on anything sent over it, just
+        # keep it open and notice if the peer closes it.
+        loop = asyncio.get_running_loop()
+        try:
+            while True:
+                data = await loop.sock_recv(ctrl_conn, 64)
+                if not data:
+                    break
+        except OSError:
+            pass
+        finally:
+            if self._control_conn is ctrl_conn:
+                self.reset_connection()
 
     def send_move(self, dx, dy, buttons=0):
         if not self._interrupt_conn:
@@ -290,12 +311,14 @@ class BluetoothHID:
             return False
 
     def reset_connection(self):
-        if self._interrupt_conn:
-            try:
-                self._interrupt_conn.close()
-            except OSError:
-                pass
+        for conn in (self._interrupt_conn, self._control_conn):
+            if conn:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
         self._interrupt_conn = None
+        self._control_conn = None
         self._peer_address = None
         self._on_state_change(connected=False, peer=None)
 

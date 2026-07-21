@@ -12,11 +12,18 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+if [ -n "$SUDO_USER" ]; then
+    WEB_USER="$SUDO_USER"
+else
+    WEB_USER="$USER"
+fi
+
 echo "==================================="
 echo "  Mouse Jiggler - Install"
 echo "==================================="
 echo ""
 echo "Install directory: $SCRIPT_DIR"
+echo "Web service user:  $WEB_USER"
 echo ""
 
 echo "Installing system dependencies..."
@@ -28,9 +35,16 @@ python3 -m venv "$SCRIPT_DIR/venv"
 "$SCRIPT_DIR/venv/bin/pip" install --upgrade pip
 "$SCRIPT_DIR/venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt"
 
-echo "Creating mousejiggler group and web service user..."
+echo "Creating mousejiggler group..."
 getent group mousejiggler >/dev/null || groupadd --system mousejiggler
-id -u mousejiggler-web >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin -g mousejiggler mousejiggler-web
+usermod -aG mousejiggler "$WEB_USER"
+
+# Clean up the old dedicated service account from earlier installs, if present:
+# it can never traverse into $WEB_USER's home directory to reach this repo.
+if id -u mousejiggler-web >/dev/null 2>&1; then
+    echo "Removing obsolete mousejiggler-web system account..."
+    userdel mousejiggler-web 2>/dev/null || true
+fi
 
 echo "Setting Bluetooth adapter class (peripheral, keyboard+mouse combo)..."
 if [ -f /etc/bluetooth/main.conf ] && ! grep -q "^Class" /etc/bluetooth/main.conf; then
@@ -39,13 +53,15 @@ fi
 
 echo "Installing systemd units..."
 for unit in mouse-jiggler-daemon.service mouse-jiggler-web.service; do
-    sed "s|__INSTALL_DIR__|$SCRIPT_DIR|g" "systemd/$unit" > "/etc/systemd/system/$unit"
+    sed -e "s|__INSTALL_DIR__|$SCRIPT_DIR|g" -e "s|__WEB_USER__|$WEB_USER|g" \
+        "systemd/$unit" > "/etc/systemd/system/$unit"
 done
 
 systemctl daemon-reload
 systemctl restart bluetooth
 systemctl enable --now mouse-jiggler-daemon.service
 systemctl enable --now mouse-jiggler-web.service
+systemctl restart mouse-jiggler-web.service
 
 echo ""
 echo "==================================="

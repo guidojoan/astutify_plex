@@ -36,6 +36,13 @@ This installs `bluez`/`python3-venv`, creates a venv, installs both systemd
 units, and starts them. To update after a `git pull`, just re-run
 `sudo bash install.sh`.
 
+The daemon runs as `root` (needed for raw Bluetooth access). The web service
+runs as whichever user invoked `sudo` (i.e. the account that owns this repo
+checkout, e.g. `plex`) rather than a separate system account — it needs to
+`cd` into this directory to start, and a dedicated system account has no
+access to another user's home directory. That user is added to the
+`mousejiggler` group so it can read the daemon's IPC socket.
+
 Web UI: `http://<pi-ip>:8090`
 
 ## Pairing

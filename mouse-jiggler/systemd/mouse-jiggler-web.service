@@ -7,7 +7,7 @@ Wants=mouse-jiggler-daemon.service
 Type=simple
 WorkingDirectory=__INSTALL_DIR__
 ExecStart=__INSTALL_DIR__/venv/bin/uvicorn webapp.main:app --host 0.0.0.0 --port 8090
-User=mousejiggler-web
+User=__WEB_USER__
 Group=mousejiggler
 Environment=MOUSE_JIGGLER_SOCKET=/run/mouse-jiggler/daemon.sock
 Environment=MOUSE_JIGGLER_CONFIG=/var/lib/mouse-jiggler/config.json

@@ -21,6 +21,7 @@ import subprocess
 from dbus_next import Variant
 from dbus_next.aio import MessageBus
 from dbus_next.constants import BusType
+from dbus_next.errors import DBusError
 from dbus_next.service import ServiceInterface, method
 
 logger = logging.getLogger("bt_hid")
@@ -190,17 +191,7 @@ class BluetoothHID:
         profile_mgr = obj.get_interface("org.bluez.ProfileManager1")
         agent_mgr = obj.get_interface("org.bluez.AgentManager1")
 
-        await profile_mgr.call_register_profile(
-            PROFILE_PATH,
-            HID_UUID,
-            {
-                "ServiceRecord": Variant("s", _sdp_record_xml()),
-                "Role": Variant("s", "server"),
-                "RequireAuthentication": Variant("b", False),
-                "RequireAuthorization": Variant("b", False),
-                "AutoConnect": Variant("b", True),
-            },
-        )
+        await self._register_profile_with_retry(profile_mgr)
         await agent_mgr.call_register_agent(AGENT_PATH, "NoInputNoOutput")
         await agent_mgr.call_request_default_agent(AGENT_PATH)
 
@@ -208,6 +199,35 @@ class BluetoothHID:
         self._interrupt_sock = self._make_listening_socket(PSM_INTERRUPT)
         self._accept_task = asyncio.create_task(self._accept_loop())
         logger.info("Bluetooth HID mouse profile registered, listening on PSM 0x11/0x13")
+
+    async def _register_profile_with_retry(self, profile_mgr, attempts=5, delay=1.0):
+        # If this daemon was just restarted after a crash, BlueZ may not yet
+        # have released the HID UUID registration held by the previous
+        # instance's now-closed D-Bus connection -- that cleanup isn't
+        # instantaneous, and systemd's RestartSec can easily be faster than
+        # it. Retry instead of dying, so a crash-restart storm self-heals.
+        opts = {
+            "ServiceRecord": Variant("s", _sdp_record_xml()),
+            "Role": Variant("s", "server"),
+            "RequireAuthentication": Variant("b", False),
+            "RequireAuthorization": Variant("b", False),
+            "AutoConnect": Variant("b", True),
+        }
+        for attempt in range(1, attempts + 1):
+            try:
+                await profile_mgr.call_register_profile(PROFILE_PATH, HID_UUID, opts)
+                return
+            except DBusError as exc:
+                if attempt == attempts:
+                    raise
+                logger.warning(
+                    "RegisterProfile failed (%s), retrying in %.1fs (attempt %d/%d)",
+                    exc,
+                    delay,
+                    attempt,
+                    attempts,
+                )
+                await asyncio.sleep(delay)
 
     @staticmethod
     def _set_class_of_device():

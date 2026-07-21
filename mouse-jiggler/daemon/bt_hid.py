@@ -211,8 +211,23 @@ class BluetoothHID:
 
     @staticmethod
     def _set_class_of_device():
+        # Best-effort only: /etc/bluetooth/main.conf's [General] Class=
+        # (set by install.sh) is the durable source of truth, applied by
+        # bluetoothd itself on every restart. btmgmt can hang indefinitely
+        # if it races bluetoothd for the adapter, so it must never be
+        # allowed to block daemon startup.
         try:
-            subprocess.run(["btmgmt", "class", "0x05", "0xC0"], check=True, capture_output=True)
+            subprocess.run(
+                ["btmgmt", "class", "0x05", "0xC0"],
+                check=True,
+                capture_output=True,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "btmgmt class command timed out after 5s; relying on "
+                "/etc/bluetooth/main.conf Class= instead"
+            )
         except (subprocess.CalledProcessError, FileNotFoundError) as exc:
             logger.warning("Could not set Class of Device via btmgmt: %s", exc)
 

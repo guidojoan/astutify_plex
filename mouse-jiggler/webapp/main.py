@@ -1,13 +1,13 @@
 import json
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from . import ipc_client
+from . import cec_client, ipc_client
 
 CONFIG_PATH = os.environ.get("MOUSE_JIGGLER_CONFIG", "/var/lib/mouse-jiggler/config.json")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -39,6 +39,14 @@ class PairRequest(BaseModel):
 
 class UnpairRequest(BaseModel):
     address: Optional[str] = None
+
+
+class CECPowerRequest(BaseModel):
+    state: Literal["on", "standby"]
+
+
+class CECActiveSourceRequest(BaseModel):
+    source: Optional[Literal["hdmi1", "hdmi2"]] = None
 
 
 def _fallback_status():
@@ -120,6 +128,24 @@ async def pairing_status():
     except ipc_client.DaemonUnavailable:
         return {"pairing_state": "unknown", "daemon_reachable": False}
     return {"pairing_state": result.get("pairing_state", "unknown"), "daemon_reachable": True}
+
+
+@app.post("/api/cec/power")
+async def cec_power(req: CECPowerRequest):
+    try:
+        await cec_client.power(req.state)
+    except cec_client.CECError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"ok": True, "state": req.state}
+
+
+@app.post("/api/cec/active-source")
+async def cec_active_source(req: CECActiveSourceRequest = CECActiveSourceRequest()):
+    try:
+        await cec_client.set_active_source(req.source)
+    except cec_client.CECError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"ok": True, "source": req.source or "self"}
 
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

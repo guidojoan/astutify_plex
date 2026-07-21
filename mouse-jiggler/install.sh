@@ -28,7 +28,7 @@ echo ""
 
 echo "Installing system dependencies..."
 apt-get update
-apt-get install -y python3-venv bluez bluez-tools dbus
+apt-get install -y python3-venv bluez bluez-tools dbus cec-utils
 
 echo "Setting up Python virtual environment..."
 python3 -m venv "$SCRIPT_DIR/venv"
@@ -38,6 +38,10 @@ python3 -m venv "$SCRIPT_DIR/venv"
 echo "Creating mousejiggler group..."
 getent group mousejiggler >/dev/null || groupadd --system mousejiggler
 usermod -aG mousejiggler "$WEB_USER"
+
+# /dev/cec0 is typically owned by root:video — add the web user so it can
+# run cec-client (HDMI-CEC) without needing root.
+usermod -aG video "$WEB_USER"
 
 # Clean up the old dedicated service account from earlier installs, if present:
 # it can never traverse into $WEB_USER's home directory to reach this repo.

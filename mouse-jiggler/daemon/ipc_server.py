@@ -47,7 +47,9 @@ class IPCServer:
         if cmd == "get_status":
             return {"ok": True, **self.daemon.get_status()}
         if cmd == "set_config":
-            status = self.daemon.set_config(request["enabled"], request["interval_s"])
+            status = await self.daemon.set_config(
+                request["enabled"], request["interval_s"], request.get("device_name")
+            )
             return {"ok": True, **status}
         if cmd == "pair":
             timeout_s = await self.daemon.start_pairing(request.get("timeout_s", 120))

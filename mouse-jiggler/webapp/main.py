@@ -18,6 +18,7 @@ app = FastAPI(title="Mouse Jiggler")
 class ConfigUpdate(BaseModel):
     enabled: bool
     interval_s: int = Field(ge=5, le=3600)
+    device_name: Optional[str] = Field(default=None, min_length=1, max_length=32)
 
 
 class PairRequest(BaseModel):
@@ -37,6 +38,7 @@ def _fallback_status():
     return {
         "enabled": data.get("enabled", False),
         "interval_s": data.get("interval_s", 45),
+        "device_name": data.get("device_name", "Mouse Jiggler"),
         "bt_connected": False,
         "bt_peer": None,
         "pairing_state": "unknown",
@@ -58,7 +60,12 @@ async def get_status():
 @app.put("/api/config")
 async def set_config(update: ConfigUpdate):
     try:
-        result = await ipc_client.call("set_config", enabled=update.enabled, interval_s=update.interval_s)
+        result = await ipc_client.call(
+            "set_config",
+            enabled=update.enabled,
+            interval_s=update.interval_s,
+            device_name=update.device_name,
+        )
     except ipc_client.DaemonUnavailable:
         raise HTTPException(status_code=503, detail="daemon unreachable")
     result.pop("ok", None)

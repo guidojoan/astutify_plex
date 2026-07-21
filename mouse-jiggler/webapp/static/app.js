@@ -3,6 +3,7 @@ const statusBt = document.getElementById("status-bt");
 const statusPeer = document.getElementById("status-peer");
 const enabledToggle = document.getElementById("enabled-toggle");
 const intervalInput = document.getElementById("interval-input");
+const deviceNameInput = document.getElementById("device-name-input");
 const saveBtn = document.getElementById("save-btn");
 const saveStatus = document.getElementById("save-status");
 const pairBtn = document.getElementById("pair-btn");
@@ -33,6 +34,9 @@ async function refreshStatus() {
     if (document.activeElement !== intervalInput) {
       intervalInput.value = status.interval_s;
     }
+    if (document.activeElement !== deviceNameInput) {
+      deviceNameInput.value = status.device_name || "";
+    }
   } catch (err) {
     statusDaemon.textContent = "error";
     statusDaemon.className = "bad";
@@ -48,6 +52,7 @@ saveBtn.addEventListener("click", async () => {
       body: JSON.stringify({
         enabled: enabledToggle.checked,
         interval_s: parseInt(intervalInput.value, 10),
+        device_name: deviceNameInput.value.trim() || null,
       }),
     });
     saveStatus.textContent = "Saved";

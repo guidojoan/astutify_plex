@@ -46,9 +46,13 @@ if id -u mousejiggler-web >/dev/null 2>&1; then
     userdel mousejiggler-web 2>/dev/null || true
 fi
 
-echo "Setting Bluetooth adapter class (peripheral, keyboard+mouse combo)..."
-if [ -f /etc/bluetooth/main.conf ] && ! grep -q "^Class" /etc/bluetooth/main.conf; then
-    sed -i '/^\[General\]/a Class = 0x0005C0' /etc/bluetooth/main.conf
+echo "Setting Bluetooth adapter class (peripheral, mouse only)..."
+if [ -f /etc/bluetooth/main.conf ]; then
+    if grep -q "^Class" /etc/bluetooth/main.conf; then
+        sed -i 's|^Class.*|Class = 0x000580|' /etc/bluetooth/main.conf
+    else
+        sed -i '/^\[General\]/a Class = 0x000580' /etc/bluetooth/main.conf
+    fi
 fi
 
 echo "Disabling BlueZ's built-in HID 'input' plugin..."

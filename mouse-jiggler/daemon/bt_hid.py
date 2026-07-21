@@ -180,12 +180,15 @@ class BluetoothHID:
         self._on_state_change = on_state_change or (lambda **kw: None)
         self._accept_task = None
 
-    async def start(self):
+    async def start(self, device_name=None):
         self._set_class_of_device()
         self._bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
 
         self._bus.export(PROFILE_PATH, HIDProfile())
         self._bus.export(AGENT_PATH, NoInputNoOutputAgent())
+
+        if device_name:
+            await self.set_device_name(device_name)
 
         introspection = await self._bus.introspect(BLUEZ_SERVICE, "/org/bluez")
         obj = self._bus.get_proxy_object(BLUEZ_SERVICE, "/org/bluez", introspection)
@@ -237,9 +240,14 @@ class BluetoothHID:
         # bluetoothd itself on every restart. btmgmt can hang indefinitely
         # if it races bluetoothd for the adapter, so it must never be
         # allowed to block daemon startup.
+        #
+        # Minor class 0x80 = Peripheral major class, "Pointing device"
+        # feature bits, uncategorized type -- mouse-only. The earlier 0xC0
+        # ("combo keyboard/pointing device") made macOS show a keyboard icon
+        # instead of a mouse.
         try:
             subprocess.run(
-                ["btmgmt", "class", "0x05", "0xC0"],
+                ["btmgmt", "class", "0x05", "0x80"],
                 check=True,
                 capture_output=True,
                 timeout=5,
@@ -337,3 +345,14 @@ class BluetoothHID:
         await props.call_set("org.bluez.Adapter1", "DiscoverableTimeout", Variant("u", timeout_s))
         await props.call_set("org.bluez.Adapter1", "Pairable", Variant("b", discoverable))
         await props.call_set("org.bluez.Adapter1", "Discoverable", Variant("b", discoverable))
+
+    async def set_device_name(self, name):
+        # Sets the adapter's Alias, which is what BlueZ advertises during
+        # scanning/pairing (the read-only "Name" property reflects the
+        # system hostname instead). Only affects future scans/pairings --
+        # hosts that already bonded with the old name (e.g. macOS) keep
+        # showing what they cached until the device is forgotten/re-paired.
+        introspection = await self._bus.introspect(BLUEZ_SERVICE, ADAPTER_PATH)
+        obj = self._bus.get_proxy_object(BLUEZ_SERVICE, ADAPTER_PATH, introspection)
+        props = obj.get_interface("org.freedesktop.DBus.Properties")
+        await props.call_set("org.bluez.Adapter1", "Alias", Variant("s", name))

@@ -29,6 +29,12 @@
         <span>Interval (seconds)</span>
         <input type="number" id="interval-input" min="5" max="3600" step="1">
       </label>
+      <label class="field-row">
+        <span>Device name</span>
+        <input type="text" id="device-name-input" maxlength="32" placeholder="Mouse Jiggler">
+      </label>
+      <p class="hint">Renaming only affects future pairings — a Mac that already
+        paired keeps showing the old name until you forget and re-pair it.</p>
       <button id="save-btn">Save</button>
       <span id="save-status" class="hint"></span>
     </section>

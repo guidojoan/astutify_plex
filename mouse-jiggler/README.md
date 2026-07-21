@@ -60,6 +60,16 @@ Bluetooth settings while the peripheral (the Pi) is discoverable, rather
 than the peripheral connecting out — that's why pairing is a manual,
 UI-triggered action rather than something the daemon does automatically.
 
+## Renaming the device
+
+The **Device name** field in the web UI sets the Bluetooth adapter's Alias
+(what's advertised while scanning/pairing) — by default it's "Mouse
+Jiggler", not the Pi's hostname. It only affects *future* pairings: a Mac
+that already paired keeps showing whatever name it cached at pairing time.
+To see a new name (or the corrected mouse icon, if you paired before this
+was fixed), remove the device from the Mac's Bluetooth settings and pair
+again.
+
 ## Known caveats
 
 - **The BlueZ SDP-record and L2CAP-socket plumbing in `daemon/bt_hid.py`

@@ -21,6 +21,7 @@ class JigglerDaemon:
         state = self.config_store.load()
         self.enabled = state["enabled"]
         self.interval_s = state["interval_s"]
+        self.device_name = state["device_name"]
         self.bt = BluetoothHID(on_state_change=self._on_bt_state_change)
         self.pairing_state = "idle"
         self._pairing_revert_handle = None
@@ -31,7 +32,7 @@ class JigglerDaemon:
         logger.info("Bluetooth state changed: connected=%s peer=%s", connected, peer)
 
     async def start(self):
-        await self.bt.start()
+        await self.bt.start(device_name=self.device_name)
         self._movement_task = asyncio.create_task(self._movement_loop())
         ipc = IPCServer(SOCKET_PATH, self)
         await ipc.start()
@@ -51,15 +52,21 @@ class JigglerDaemon:
         return {
             "enabled": self.enabled,
             "interval_s": self.interval_s,
+            "device_name": self.device_name,
             "bt_connected": self.bt.connected,
             "bt_peer": self.bt.peer_address,
             "pairing_state": self.pairing_state,
         }
 
-    def set_config(self, enabled, interval_s):
+    async def set_config(self, enabled, interval_s, device_name=None):
         self.enabled = bool(enabled)
         self.interval_s = max(5, int(interval_s))
-        self.config_store.save(self.enabled, self.interval_s)
+        if device_name is not None:
+            device_name = device_name.strip()[:32] or self.device_name
+            if device_name != self.device_name:
+                self.device_name = device_name
+                await self.bt.set_device_name(self.device_name)
+        self.config_store.save(self.enabled, self.interval_s, self.device_name)
         return self.get_status()
 
     async def start_pairing(self, timeout_s):

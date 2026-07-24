@@ -35,6 +35,12 @@ HID_UUID = "00001124-0000-1000-8000-00805f9b34fb"
 PSM_CONTROL = 0x11
 PSM_INTERRUPT = 0x13
 
+# How long to wait for a peer to open its second HID channel after opening
+# the first, before giving up on that half-open attempt. Normal hosts open
+# both within milliseconds, but this must not be too tight: a slow/loaded
+# host reconnecting after its own reboot is exactly the case this guards.
+CHANNEL_PAIR_TIMEOUT_S = 5.0
+
 # HIDP transaction header: bits 7-4 are the transaction type, bits 3-0 are
 # a type-specific parameter. Hosts send SET_PROTOCOL/SET_REPORT/SET_IDLE
 # on the control channel right after connecting and expect a HANDSHAKE
@@ -198,7 +204,10 @@ class BluetoothHID:
         self._interrupt_conn = None
         self._peer_address = None
         self._on_state_change = on_state_change or (lambda **kw: None)
-        self._accept_task = None
+        self._accept_tasks = []
+        # peer_address -> {"ctrl": socket|None, "intr": socket|None, "timer": TimerHandle|None}
+        # while a peer has opened one HID channel but not yet the other.
+        self._pending = {}
 
     async def start(self, device_name=None):
         self._set_class_of_device()
@@ -221,7 +230,10 @@ class BluetoothHID:
 
         self._control_sock = self._make_listening_socket(PSM_CONTROL)
         self._interrupt_sock = self._make_listening_socket(PSM_INTERRUPT)
-        self._accept_task = asyncio.create_task(self._accept_loop())
+        self._accept_tasks = [
+            asyncio.create_task(self._accept_channel_loop(self._control_sock, "ctrl")),
+            asyncio.create_task(self._accept_channel_loop(self._interrupt_sock, "intr")),
+        ]
         logger.info("Bluetooth HID mouse profile registered, listening on PSM 0x11/0x13")
 
     async def _register_profile_with_retry(self, profile_mgr, attempts=5, delay=1.0):
@@ -288,25 +300,85 @@ class BluetoothHID:
         sock.setblocking(False)
         return sock
 
-    async def _accept_loop(self):
+    async def _accept_channel_loop(self, sock, channel):
+        # Control and interrupt run as independent accept loops rather than
+        # one loop awaiting both in lockstep. A reconnecting host (e.g. a
+        # Mac coming back up after its own reboot) does not reliably open
+        # both HID channels back-to-back the way it does during initial
+        # pairing -- sometimes only one shows up, or they arrive out of
+        # order. A single sequential accept would then wedge forever on
+        # whichever channel never came, silently blocking all future
+        # connections too (the loop never gets back around to accept()).
         loop = asyncio.get_running_loop()
         while True:
             try:
-                ctrl_conn, _ctrl_addr = await loop.sock_accept(self._control_sock)
-                intr_conn, intr_addr = await loop.sock_accept(self._interrupt_sock)
+                conn, addr = await loop.sock_accept(sock)
             except OSError as exc:
-                logger.error("L2CAP accept failed: %s", exc)
+                logger.error("L2CAP accept failed on %s channel: %s", channel, exc)
                 await asyncio.sleep(1)
                 continue
+            peer = addr[0] if isinstance(addr, tuple) else str(addr)
+            logger.info("Bluetooth %s channel connected from %s", channel, peer)
+            self._register_channel(peer, channel, conn)
 
-            ctrl_conn.setblocking(False)
-            intr_conn.setblocking(True)
-            self._control_conn = ctrl_conn
-            self._interrupt_conn = intr_conn
-            self._peer_address = intr_addr[0] if isinstance(intr_addr, tuple) else str(intr_addr)
-            logger.info("Bluetooth peer connected: %s", self._peer_address)
-            self._on_state_change(connected=True, peer=self._peer_address)
-            asyncio.create_task(self._handle_control_channel(ctrl_conn))
+    def _register_channel(self, peer, channel, conn):
+        loop = asyncio.get_running_loop()
+        entry = self._pending.setdefault(peer, {"ctrl": None, "intr": None, "timer": None})
+
+        stale = entry[channel]
+        if stale is not None:
+            # Peer re-opened this channel before the pairing completed
+            # (e.g. a retried connect attempt) -- the earlier half is dead.
+            try:
+                stale.close()
+            except OSError:
+                pass
+        entry[channel] = conn
+
+        other = "intr" if channel == "ctrl" else "ctrl"
+        if entry[other] is not None:
+            if entry["timer"]:
+                entry["timer"].cancel()
+            del self._pending[peer]
+            self._finalize_connection(peer, entry["ctrl"], entry["intr"])
+            return
+
+        if entry["timer"]:
+            entry["timer"].cancel()
+        entry["timer"] = loop.call_later(CHANNEL_PAIR_TIMEOUT_S, self._abandon_pending, peer)
+
+    def _abandon_pending(self, peer):
+        entry = self._pending.pop(peer, None)
+        if not entry:
+            return
+        logger.warning(
+            "Bluetooth peer %s opened only the %s channel; abandoning after %.0fs",
+            peer,
+            "control" if entry["ctrl"] else "interrupt",
+            CHANNEL_PAIR_TIMEOUT_S,
+        )
+        for conn in (entry["ctrl"], entry["intr"]):
+            if conn:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+
+    def _finalize_connection(self, peer, ctrl_conn, intr_conn):
+        if self._control_conn is not None or self._interrupt_conn is not None:
+            # An old connection was never cleanly torn down (e.g. the host
+            # dropped off a reboot without a clean HID disconnect) -- drop
+            # it before adopting the new one.
+            self.reset_connection()
+
+        ctrl_conn.setblocking(False)
+        intr_conn.setblocking(True)
+        self._control_conn = ctrl_conn
+        self._interrupt_conn = intr_conn
+        self._peer_address = peer
+        logger.info("Bluetooth peer connected: %s", peer)
+        self._on_state_change(connected=True, peer=peer)
+        asyncio.create_task(self._handle_control_channel(ctrl_conn))
 
     async def _handle_control_channel(self, ctrl_conn):
         # The control channel must stay open for the life of the connection

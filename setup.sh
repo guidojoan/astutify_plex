@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# Script de configuración para Astutify Plex
-# Este script configura Samba y prepara el entorno
+# Setup script for Astutify Plex
+# This script mounts disks, configures Samba, and prepares the environment
 
 set -e
 
-echo "==================================="
-echo "  Configuración de Astutify Plex"
-echo "==================================="
+echo "===================================="
+echo "  Astutify Plex Setup"
+echo "===================================="
 echo ""
 
-# Obtener el directorio home del usuario actual
+# Get the home directory of the current user
 if [ -n "$SUDO_USER" ]; then
     USER_HOME=$(eval echo ~$SUDO_USER)
     CURRENT_USER="$SUDO_USER"
@@ -19,46 +19,23 @@ else
     CURRENT_USER="$USER"
 fi
 
-echo "Directorio de trabajo: $USER_HOME"
-echo "Usuario: $CURRENT_USER"
+echo "Working directory: $USER_HOME"
+echo "User: $CURRENT_USER"
 echo ""
 
-# Solicitar contraseña de Samba (sin mostrarla en pantalla)
-printf "Ingrese la contraseña de Samba: "
-stty -echo
-read SAMBA_PASSWORD
-stty echo
-echo ""
-
-printf "Confirme la contraseña de Samba: "
-stty -echo
-read SAMBA_PASSWORD_CONFIRM
-stty echo
-echo ""
-
-
-# Verificar que las contraseñas coincidan
-if [ "$SAMBA_PASSWORD" != "$SAMBA_PASSWORD_CONFIRM" ]; then
-    echo "Error: Las contraseñas no coinciden"
-    exit 1
-fi
-
-echo ""
-
-# Preguntar si se desea usar VPN (gluetun)
-printf "¿Desea usar VPN para las descargas? (s/n): "
+# Ask whether to use a VPN (gluetun) for downloads
+printf "Do you want to use a VPN for downloads? (y/n): "
 read -r USE_VPN
 echo ""
 
-if [[ "$USE_VPN" =~ ^[Ss]$ ]]; then
-    USE_VPN="s"
+if [[ "$USE_VPN" =~ ^[Yy]$ ]]; then
+    USE_VPN="y"
 
-    # Solicitar credenciales de OpenVPN
-    printf "Ingrese su usuario de OpenVPN: "
+    printf "Enter your OpenVPN username: "
     read OPENVPN_USER
     echo ""
 
-    printf "Ingrese su password de OpenVPN: "
+    printf "Enter your OpenVPN password: "
     stty -echo
     read OPENVPN_PASSWORD
     stty echo
@@ -70,13 +47,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 
-if [ "$USE_VPN" = "s" ]; then
-    # Guardar las credenciales en archivo .env
-    echo "Guardando configuración..."
+if [ "$USE_VPN" = "y" ]; then
+    echo "Saving configuration..."
 
-    # Crear o actualizar archivo .env
     if [ -f "$ENV_FILE" ]; then
-        # Si existe, actualizar las líneas de OpenVPN
         if grep -q "^OPENVPN_USER=" "$ENV_FILE"; then
             sed -i "s|^OPENVPN_USER=.*|OPENVPN_USER=$OPENVPN_USER|" "$ENV_FILE"
         else
@@ -89,16 +63,15 @@ if [ "$USE_VPN" = "s" ]; then
             echo "OPENVPN_PASSWORD=$OPENVPN_PASSWORD" >> "$ENV_FILE"
         fi
     else
-        # Crear nuevo archivo .env
         echo "OPENVPN_USER=$OPENVPN_USER" > "$ENV_FILE"
         echo "OPENVPN_PASSWORD=$OPENVPN_PASSWORD" >> "$ENV_FILE"
     fi
 
-    # Asegurar que .env no sea accesible a otros usuarios
+    # Make sure .env is not accessible to other users
     chmod 600 "$ENV_FILE"
 fi
 
-# Detectar el sistema operativo
+# Detect the operating system
 if [ -f /etc/debian_version ]; then
     OS="debian"
 elif [ -f /etc/redhat-release ]; then
@@ -107,45 +80,257 @@ else
     OS="unknown"
 fi
 
-# Instalar Samba si no está instalado
-if ! command -v smbpasswd &> /dev/null; then
-    echo "Samba no está instalado. Instalando..."
-    
-    if [ "$OS" = "debian" ]; then
-        sudo apt-get update
-        sudo apt-get install -y samba samba-common-bin
-    elif [ "$OS" = "redhat" ]; then
-        sudo yum install -y samba samba-client samba-common
+# ===================================
+#   USB disk setup
+# ===================================
+echo ""
+echo "===================================="
+echo "  USB disk setup"
+echo "===================================="
+
+BASE_MEDIA_DIR="/plexmedia"
+MOUNTED_FOLDERS=()
+
+while true; do
+    mapfile -t USB_DISKS < <(lsblk -dn -o NAME,TRAN | awk '$2=="usb"{print $1}')
+
+    if [ ${#USB_DISKS[@]} -eq 0 ]; then
+        echo "No USB disks detected."
+        break
+    fi
+
+    echo "Detected USB disks:"
+    for i in "${!USB_DISKS[@]}"; do
+        DISK="${USB_DISKS[$i]}"
+        SIZE=$(lsblk -dn -o SIZE "/dev/$DISK")
+        MODEL=$(lsblk -dn -o MODEL "/dev/$DISK")
+        echo "  [$i] /dev/$DISK - $SIZE - $MODEL"
+    done
+
+    printf "Select the number of the disk to mount (leave empty to finish): "
+    read -r DISK_INDEX
+
+    if [ -z "$DISK_INDEX" ]; then
+        break
+    fi
+
+    SELECTED_DISK="${USB_DISKS[$DISK_INDEX]}"
+
+    if [ -z "$SELECTED_DISK" ]; then
+        echo "Invalid selection."
+        continue
+    fi
+
+    mapfile -t PARTITIONS < <(lsblk -ln -o NAME,TYPE "/dev/$SELECTED_DISK" | awk '$2=="part"{print $1}')
+
+    if [ ${#PARTITIONS[@]} -eq 0 ]; then
+        SELECTED_PART="$SELECTED_DISK"
+    elif [ ${#PARTITIONS[@]} -eq 1 ]; then
+        SELECTED_PART="${PARTITIONS[0]}"
     else
-        echo "Error: No se pudo detectar el sistema operativo"
-        echo "Por favor, instale Samba manualmente"
+        echo "Partitions found on /dev/$SELECTED_DISK:"
+        for i in "${!PARTITIONS[@]}"; do
+            PART="${PARTITIONS[$i]}"
+            SIZE=$(lsblk -dn -o SIZE "/dev/$PART")
+            FSTYPE=$(lsblk -dn -o FSTYPE "/dev/$PART")
+            echo "  [$i] /dev/$PART - $SIZE - $FSTYPE"
+        done
+        printf "Select the number of the partition to mount: "
+        read -r PART_INDEX
+        SELECTED_PART="${PARTITIONS[$PART_INDEX]}"
+    fi
+
+    if [ -z "$SELECTED_PART" ]; then
+        echo "Invalid selection. Skipping this disk."
+        continue
+    fi
+
+    DISK_UUID=$(sudo blkid -s UUID -o value "/dev/$SELECTED_PART")
+    DISK_FSTYPE=$(sudo blkid -s TYPE -o value "/dev/$SELECTED_PART")
+
+    if [ -z "$DISK_UUID" ]; then
+        echo "Error: could not get the UUID of /dev/$SELECTED_PART. Skipping this disk."
+        continue
+    fi
+
+    DEFAULT_FOLDER_NAME="$SELECTED_PART"
+    printf "Enter the folder name for this disk's mount point [%s]: " "$DEFAULT_FOLDER_NAME"
+    read -r FOLDER_NAME
+    FOLDER_NAME="${FOLDER_NAME:-$DEFAULT_FOLDER_NAME}"
+
+    MOUNT_POINT="$BASE_MEDIA_DIR/$FOLDER_NAME"
+
+    USER_UID=$(id -u "$CURRENT_USER")
+    USER_GID=$(id -g "$CURRENT_USER")
+
+    # Install filesystem support if needed
+    case "$DISK_FSTYPE" in
+        ntfs)
+            if ! command -v ntfs-3g &> /dev/null; then
+                if [ "$OS" = "debian" ]; then
+                    sudo apt-get install -y ntfs-3g
+                elif [ "$OS" = "redhat" ]; then
+                    sudo yum install -y ntfs-3g
+                fi
+            fi
+            MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,dmask=022,fmask=133,nofail"
+            ;;
+        exfat)
+            if ! command -v mount.exfat-fuse &> /dev/null && ! command -v mount.exfat &> /dev/null; then
+                if [ "$OS" = "debian" ]; then
+                    sudo apt-get install -y exfatprogs exfat-fuse
+                elif [ "$OS" = "redhat" ]; then
+                    sudo yum install -y exfatprogs
+                fi
+            fi
+            MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,nofail"
+            ;;
+        *)
+            MOUNT_OPTS="defaults,nofail"
+            ;;
+    esac
+
+    echo "Creating mount point $MOUNT_POINT..."
+    sudo mkdir -p "$MOUNT_POINT"
+
+    # Back up fstab before modifying it
+    sudo cp /etc/fstab "/etc/fstab.bak.$(date +%s)"
+
+    if grep -q "$DISK_UUID" /etc/fstab; then
+        echo "This disk already has an entry in /etc/fstab."
+    else
+        echo "Adding entry to /etc/fstab for permanent mounting..."
+        sudo bash -c "echo 'UUID=$DISK_UUID  $MOUNT_POINT  $DISK_FSTYPE  $MOUNT_OPTS  0  2' >> /etc/fstab"
+    fi
+
+    echo "Mounting $MOUNT_POINT..."
+    sudo systemctl daemon-reload
+    sudo mount -a
+
+    if [ "$DISK_FSTYPE" != "ntfs" ] && [ "$DISK_FSTYPE" != "exfat" ]; then
+        sudo chown "$CURRENT_USER":"$CURRENT_USER" "$MOUNT_POINT"
+    fi
+
+    echo "Disk /dev/$SELECTED_PART permanently mounted at $MOUNT_POINT"
+    MOUNTED_FOLDERS+=("$FOLDER_NAME")
+
+    echo ""
+    printf "Do you want to mount another USB disk? (y/n): "
+    read -r MOUNT_ANOTHER
+    echo ""
+    if [[ ! "$MOUNT_ANOTHER" =~ ^[Yy]$ ]]; then
+        break
+    fi
+done
+
+# ===================================
+#   Samba configuration
+# ===================================
+echo ""
+echo "===================================="
+echo "  Samba configuration"
+echo "===================================="
+
+if [ ${#MOUNTED_FOLDERS[@]} -eq 0 ]; then
+    echo "No disks were mounted. Skipping Samba share configuration."
+else
+    printf "Enter the Samba password for %s: " "$CURRENT_USER"
+    stty -echo
+    read SAMBA_PASSWORD
+    stty echo
+    echo ""
+
+    printf "Confirm the Samba password: "
+    stty -echo
+    read SAMBA_PASSWORD_CONFIRM
+    stty echo
+    echo ""
+
+    if [ "$SAMBA_PASSWORD" != "$SAMBA_PASSWORD_CONFIRM" ]; then
+        echo "Error: passwords do not match"
         exit 1
     fi
-    
-    echo "Samba instalado correctamente"
-else
-    echo "Samba ya está instalado"
-fi
 
-echo "Configurando Samba..."
+    # Install Samba if not already installed
+    if ! command -v smbpasswd &> /dev/null; then
+        echo "Samba is not installed. Installing..."
 
-# Verificar que el usuario del sistema existe
-if ! id -u "$CURRENT_USER" >/dev/null 2>&1; then
-    echo "Error: El usuario $CURRENT_USER no existe en el sistema"
-    exit 1
-fi
+        if [ "$OS" = "debian" ]; then
+            sudo apt-get update
+            sudo apt-get install -y samba samba-common-bin
+        elif [ "$OS" = "redhat" ]; then
+            sudo yum install -y samba samba-client samba-common
+        else
+            echo "Error: could not detect the operating system"
+            echo "Please install Samba manually"
+            exit 1
+        fi
 
-# Crear o actualizar el usuario de Samba y establecer la contraseña
-echo "Configurando usuario de Samba: $CURRENT_USER"
-(echo "$SAMBA_PASSWORD"; echo "$SAMBA_PASSWORD") | sudo smbpasswd -a "$CURRENT_USER" -s
+        echo "Samba installed successfully"
+    else
+        echo "Samba is already installed"
+    fi
 
-# Configurar el recurso compartido de Samba para /plexmedia
-echo "Configurando recurso compartido de Samba..."
-sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
+    echo "Configuring Samba..."
 
-[Plex-Admin]
-   comment = Media Share
-   path = /plexmedia
+    # Verify the system user exists
+    if ! id -u "$CURRENT_USER" >/dev/null 2>&1; then
+        echo "Error: user $CURRENT_USER does not exist on the system"
+        exit 1
+    fi
+
+    # Create/update the Samba user and set the password
+    echo "Configuring Samba user: $CURRENT_USER"
+    (echo "$SAMBA_PASSWORD"; echo "$SAMBA_PASSWORD") | sudo smbpasswd -a "$CURRENT_USER" -s
+
+    # Optional read-only Samba user
+    printf "Do you want to configure a read-only Samba user? (y/n): "
+    read -r SETUP_READONLY
+    echo ""
+
+    READONLY_USER=""
+    if [[ "$SETUP_READONLY" =~ ^[Yy]$ ]]; then
+        printf "Enter the read-only Samba username: "
+        read -r READONLY_USER
+
+        printf "Enter the password for %s: " "$READONLY_USER"
+        stty -echo
+        read READONLY_PASSWORD
+        stty echo
+        echo ""
+
+        printf "Confirm the password: "
+        stty -echo
+        read READONLY_PASSWORD_CONFIRM
+        stty echo
+        echo ""
+
+        if [ "$READONLY_PASSWORD" != "$READONLY_PASSWORD_CONFIRM" ]; then
+            echo "Error: passwords do not match"
+            exit 1
+        fi
+
+        # Create the system user if it doesn't exist
+        if ! id -u "$READONLY_USER" >/dev/null 2>&1; then
+            echo "Creating system user: $READONLY_USER"
+            sudo useradd -m -s /usr/sbin/nologin "$READONLY_USER"
+        fi
+
+        # Create the Samba user with read-only access
+        echo "Configuring read-only Samba user: $READONLY_USER"
+        (echo "$READONLY_PASSWORD"; echo "$READONLY_PASSWORD") | sudo smbpasswd -a "$READONLY_USER" -s
+    fi
+
+    # Configure a Samba share for each mounted disk
+    for FOLDER_NAME in "${MOUNTED_FOLDERS[@]}"; do
+        MOUNT_POINT="$BASE_MEDIA_DIR/$FOLDER_NAME"
+
+        echo "Configuring Samba share for $MOUNT_POINT..."
+        sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
+
+[$FOLDER_NAME]
+   comment = $FOLDER_NAME Media Share
+   path = $MOUNT_POINT
    browseable = yes
    read only = no
    guest ok = no
@@ -155,44 +340,13 @@ sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
    force user = $CURRENT_USER
 EOF
 
-echo ""
-printf "Ingrese el nombre del usuario de Samba de solo lectura: "
-read -r READONLY_USER
+        if [ -n "$READONLY_USER" ]; then
+            echo "Configuring read-only Samba share for $MOUNT_POINT..."
+            sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
 
-printf "Ingrese la contraseña para $READONLY_USER: "
-stty -echo
-read READONLY_PASSWORD
-stty echo
-echo ""
-
-printf "Confirme la contraseña: "
-stty -echo
-read READONLY_PASSWORD_CONFIRM
-stty echo
-echo ""
-
-if [ "$READONLY_PASSWORD" != "$READONLY_PASSWORD_CONFIRM" ]; then
-    echo "Error: Las contraseñas no coinciden"
-    exit 1
-fi
-
-# Crear el usuario del sistema si no existe
-if ! id -u "$READONLY_USER" >/dev/null 2>&1; then
-    echo "Creando usuario del sistema: $READONLY_USER"
-    sudo useradd -m -s /usr/sbin/nologin "$READONLY_USER"
-fi
-
-# Crear el usuario de Samba con acceso de solo lectura
-echo "Configurando usuario de Samba de solo lectura: $READONLY_USER"
-(echo "$READONLY_PASSWORD"; echo "$READONLY_PASSWORD") | sudo smbpasswd -a "$READONLY_USER" -s
-
-# Configurar el recurso compartido de Samba para acceso de solo lectura
-echo "Configurando recurso compartido de solo lectura..."
-sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
-
-[Plex]
-   comment = Media Share (Read Only)
-   path = /plexmedia
+[$FOLDER_NAME-ReadOnly]
+   comment = $FOLDER_NAME Media Share (Read Only)
+   path = $MOUNT_POINT
    browseable = yes
    read only = yes
    guest ok = no
@@ -200,130 +354,23 @@ sudo bash -c "cat >> /etc/samba/smb.conf" <<EOF
    force user = nobody
    force group = nogroup
 EOF
-
-# Reiniciar el servicio de Samba
-echo "Reiniciando servicio de Samba..."
-if [ "$OS" = "debian" ]; then
-    sudo systemctl restart smbd
-    sudo systemctl enable smbd
-elif [ "$OS" = "redhat" ]; then
-    sudo systemctl restart smb
-    sudo systemctl enable smb
-fi
-
-# Seleccionar disco USB y montarlo permanentemente en /plexmedia
-echo ""
-echo "==================================="
-echo "  Configuración de disco USB"
-echo "==================================="
-
-mapfile -t USB_DISKS < <(lsblk -dn -o NAME,TRAN | awk '$2=="usb"{print $1}')
-
-if [ ${#USB_DISKS[@]} -eq 0 ]; then
-    echo "No se detectó ningún disco USB conectado. Omitiendo montaje de /plexmedia."
-else
-    echo "Discos USB detectados:"
-    for i in "${!USB_DISKS[@]}"; do
-        DISK="${USB_DISKS[$i]}"
-        SIZE=$(lsblk -dn -o SIZE "/dev/$DISK")
-        MODEL=$(lsblk -dn -o MODEL "/dev/$DISK")
-        echo "  [$i] /dev/$DISK - $SIZE - $MODEL"
+        fi
     done
 
-    printf "Seleccione el número del disco a montar en /plexmedia: "
-    read -r DISK_INDEX
-    SELECTED_DISK="${USB_DISKS[$DISK_INDEX]}"
-
-    if [ -z "$SELECTED_DISK" ]; then
-        echo "Selección inválida. Omitiendo montaje de /plexmedia."
-    else
-        mapfile -t PARTITIONS < <(lsblk -ln -o NAME,TYPE "/dev/$SELECTED_DISK" | awk '$2=="part"{print $1}')
-
-        if [ ${#PARTITIONS[@]} -eq 0 ]; then
-            SELECTED_PART="$SELECTED_DISK"
-        elif [ ${#PARTITIONS[@]} -eq 1 ]; then
-            SELECTED_PART="${PARTITIONS[0]}"
-        else
-            echo "Particiones encontradas en /dev/$SELECTED_DISK:"
-            for i in "${!PARTITIONS[@]}"; do
-                PART="${PARTITIONS[$i]}"
-                SIZE=$(lsblk -dn -o SIZE "/dev/$PART")
-                FSTYPE=$(lsblk -dn -o FSTYPE "/dev/$PART")
-                echo "  [$i] /dev/$PART - $SIZE - $FSTYPE"
-            done
-            printf "Seleccione el número de la partición a montar en /plexmedia: "
-            read -r PART_INDEX
-            SELECTED_PART="${PARTITIONS[$PART_INDEX]}"
-        fi
-
-        if [ -z "$SELECTED_PART" ]; then
-            echo "Selección inválida. Omitiendo montaje de /plexmedia."
-        else
-            DISK_UUID=$(sudo blkid -s UUID -o value "/dev/$SELECTED_PART")
-            DISK_FSTYPE=$(sudo blkid -s TYPE -o value "/dev/$SELECTED_PART")
-
-            if [ -z "$DISK_UUID" ]; then
-                echo "Error: No se pudo obtener el UUID de /dev/$SELECTED_PART"
-            else
-                USER_UID=$(id -u "$CURRENT_USER")
-                USER_GID=$(id -g "$CURRENT_USER")
-
-                # Instalar soporte del sistema de archivos si es necesario
-                case "$DISK_FSTYPE" in
-                    ntfs)
-                        if ! command -v ntfs-3g &> /dev/null; then
-                            if [ "$OS" = "debian" ]; then
-                                sudo apt-get install -y ntfs-3g
-                            elif [ "$OS" = "redhat" ]; then
-                                sudo yum install -y ntfs-3g
-                            fi
-                        fi
-                        MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,dmask=022,fmask=133,nofail"
-                        ;;
-                    exfat)
-                        if ! command -v mount.exfat-fuse &> /dev/null && ! command -v mount.exfat &> /dev/null; then
-                            if [ "$OS" = "debian" ]; then
-                                sudo apt-get install -y exfatprogs exfat-fuse
-                            elif [ "$OS" = "redhat" ]; then
-                                sudo yum install -y exfatprogs
-                            fi
-                        fi
-                        MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,nofail"
-                        ;;
-                    *)
-                        MOUNT_OPTS="defaults,nofail"
-                        ;;
-                esac
-
-                echo "Creando punto de montaje /plexmedia..."
-                sudo mkdir -p /plexmedia
-
-                # Respaldar fstab antes de modificarlo
-                sudo cp /etc/fstab "/etc/fstab.bak.$(date +%s)"
-
-                if grep -q "$DISK_UUID" /etc/fstab; then
-                    echo "El disco ya tiene una entrada en /etc/fstab"
-                else
-                    echo "Agregando entrada a /etc/fstab para montaje permanente..."
-                    sudo bash -c "echo 'UUID=$DISK_UUID  /plexmedia  $DISK_FSTYPE  $MOUNT_OPTS  0  2' >> /etc/fstab"
-                fi
-
-                echo "Montando /plexmedia..."
-                sudo systemctl daemon-reload
-                sudo mount -a
-
-                if [ "$DISK_FSTYPE" != "ntfs" ] && [ "$DISK_FSTYPE" != "exfat" ]; then
-                    sudo chown "$CURRENT_USER":"$CURRENT_USER" /plexmedia
-                fi
-
-                echo "Disco /dev/$SELECTED_PART montado permanentemente en /plexmedia"
-            fi
-        fi
+    # Restart the Samba service
+    echo "Restarting Samba service..."
+    if [ "$OS" = "debian" ]; then
+        sudo systemctl restart smbd
+        sudo systemctl enable smbd
+    elif [ "$OS" = "redhat" ]; then
+        sudo systemctl restart smb
+        sudo systemctl enable smb
     fi
 fi
 
-# Crear directorios necesarios
-echo "Creando directorios..."
+# Create necessary directories
+echo ""
+echo "Creating directories..."
 sudo mkdir -p "$USER_HOME/Docker/plex/config"
 sudo mkdir -p "$USER_HOME/Docker/prowlarr/config"
 sudo mkdir -p "$USER_HOME/Docker/radarr/config"
@@ -331,26 +378,24 @@ sudo mkdir -p "$USER_HOME/Docker/sonarr/config"
 sudo mkdir -p "$USER_HOME/Docker/transmission/config"
 sudo mkdir -p "$USER_HOME/Docker/seerr/config"
 
-# Establecer permisos
-echo "Configurando permisos..."
+# Set permissions
+echo "Setting permissions..."
 sudo chown -R "$CURRENT_USER":$CURRENT_USER "$USER_HOME/Docker"
 sudo chmod -R 775 "$USER_HOME/Docker"
-sudo chown -R "$CURRENT_USER":$CURRENT_USER /plexmedia
-sudo chmod -R 775 /plexmedia
 
-echo "Iniciando servicios..."
+echo "Starting services..."
 
-if [ "$USE_VPN" = "s" ]; then
+if [ "$USE_VPN" = "y" ]; then
     docker compose up -d
 else
     docker compose -f docker-compose.novpn.yml up -d
 fi
 
 echo ""
-echo "==================================="
-echo "  Configuración completada"
-echo "==================================="
+echo "===================================="
+echo "  Setup complete"
+echo "===================================="
 echo ""
-echo "Verificar estado de los servicios:"
+echo "Check the status of the services:"
 echo "  docker ps"
 echo ""

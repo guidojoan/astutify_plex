@@ -106,7 +106,7 @@ while true; do
                     sudo yum install -y exfatprogs
                 fi
             fi
-            MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,nofail"
+            MOUNT_OPTS="defaults,uid=$USER_UID,gid=$USER_GID,dmask=022,fmask=133,nofail"
             ;;
         *)
             MOUNT_OPTS="defaults,nofail"
@@ -131,7 +131,8 @@ while true; do
     sudo mount -a
 
     if [ "$DISK_FSTYPE" != "ntfs" ] && [ "$DISK_FSTYPE" != "exfat" ]; then
-        sudo chown "$CURRENT_USER":"$CURRENT_USER" "$MOUNT_POINT"
+        sudo chown -R "$CURRENT_USER":"$CURRENT_USER" "$MOUNT_POINT"
+        sudo chmod -R 775 "$MOUNT_POINT"
     fi
 
     echo "Disk /dev/$SELECTED_PART permanently mounted at $MOUNT_POINT"

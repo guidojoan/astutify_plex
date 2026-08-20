@@ -23,7 +23,9 @@ services:
       - VERSION=docker
     volumes:
       - ${HOME}/Docker/plex/config:/config
-      - /plexmedia:/media
+      - type: bind
+        source: /plexmedia
+        target: /media
     restart: unless-stopped
     network_mode: "host"
   flaresolverr:
@@ -60,7 +62,9 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ${HOME}/Docker/radarr/config:/config
-      - /plexmedia:/media
+      - type: bind
+        source: /plexmedia
+        target: /media
     ports:
       - "7878:7878"
     restart: unless-stopped
@@ -75,7 +79,9 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ${HOME}/Docker/sonarr/config:/config
-      - /plexmedia:/media
+      - type: bind
+        source: /plexmedia
+        target: /media
     ports:
       - "8989:8989"
     restart: unless-stopped
@@ -104,7 +110,9 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ${HOME}/Docker/transmission/config:/config
-      - /plexmedia:/media
+      - type: bind
+        source: /plexmedia
+        target: /media
     restart: unless-stopped
     network_mode: "service:gluetun"
     depends_on:
